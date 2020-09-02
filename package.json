@@ -1,0 +1,19 @@
+{
+  "name": "plato-runner",
+  "version": "1.0.0",
+  "description": "Convenience script to run plato across many directories and provide organized output",
+  "main": "index.js",
+  "scripts": {
+    "test": "test"
+  },
+  "keywords": [
+    "plato"
+  ],
+  "author": "pete_the_pete",
+  "license": "ISC",
+  "dependencies": {
+    "fast-glob": "^3.2.4",
+    "yargs": "^15.4.1",
+    "es6-plato": "*"
+  }
+}
