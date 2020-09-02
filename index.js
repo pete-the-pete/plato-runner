@@ -163,16 +163,31 @@ async function run() {
       }
       const title = json.name;
       // tests
+      const exclude = 'app|styles|build';
       let platoArgs = {
         title,
         eslintrc,
         recurse: true,
-        noempty: true,
-        exclude: /tests/
+        noempty: true
       };
-      const outputDir = path.join((output ? output : process.cwd()), moduleOwner, moduleType, title);
+
+      const currentDir = path.dirname(m);
+      let testsPlatoRun = Promise.resolve();
+      if (fs.existsSync(path.join(currentDir, 'tests'))) {
+        const testPlatoArgs = Object.assign({}, platoArgs);
+        testPlatoArgs.exclude = new RegExp(`${exclude}|addon|index.js`);
+        testPlatoArgs.title = `${testPlatoArgs.title}-tests`;
+        const testsOutputDir = path.join((output ? output : process.cwd()), moduleOwner, moduleType, testPlatoArgs.title);
+        console.log(`Plato.inspect ${path.dirname(m)} to ${testsOutputDir}`);
+        testsPlatoRun = plato.inspect(path.dirname(m), testsOutputDir, testPlatoArgs);
+      }
+      const outputDir = path.join((output ? output : process.cwd()), moduleOwner, moduleType, platoArgs.title);
       console.log(`Plato.inspect ${path.dirname(m)} to ${outputDir}`);
-      return await plato.inspect(path.dirname(m), outputDir, platoArgs);
+      platoArgs.exclude = /tests/;
+      const addonPlatoRun = plato.inspect(path.dirname(m), outputDir, platoArgs);
+
+      // wait for both
+      return Promise.all([testsPlatoRun, addonPlatoRun]);
     }
   })).then(() => {
     console.log(`Processed ${processedModules} total modules.`);
