@@ -136,20 +136,38 @@ async function run() {
   //  - get the name, type, and owner
   //    - run script excluding tests
   //    - run script on tests
+  //  - for each module
+  //    - show the summary per addon at the module level (a table showing the summary for each)
+  //  - for each owner
+  //    - show the total summary
+  // reportsMap: {
+  //  [owner]: { tests: [..reports], addons: [...reports], engines: [...reports]}
+  // }
+  //  
   let processedModules = 0;
   let processedAddons = 0;
   let processedEngines = 0;
+  const reportsMap = new Map();
   Promise.all(modules.map(async m => {
     var json = JSON.parse(fs.readFileSync(m));
     if (json?.keywords?.includes('ember-addon')) {
       processedModules++;
       // owner
-      let moduleOwner = 'MSG';
+      let moduleOwner = 'ALL';
       if (owners) {
         moduleOwner = (await execShellCommand(`${owners} ${m}`)).trim();
         if (moduleOwner.includes('Error')) {
           throw new Error(moduleOwner);
         }
+      }
+      if (!reportsMap.has(moduleOwner)) {
+        reportsMap.set(moduleOwner, (() => {
+          let _map = new Map();
+          _map.set('tests', new Map());
+          _map.set('addons', new Map());
+          _map.set('engines', new Map());
+          return _map;
+        })());
       }
 
       // type
@@ -163,7 +181,7 @@ async function run() {
       }
       const title = json.name;
       // tests
-      const exclude = 'app|styles|build';
+      const exclude = 'app|styles|build|.eyeglass_cache ';
       let platoArgs = {
         title,
         eslintrc,
@@ -179,15 +197,36 @@ async function run() {
         testPlatoArgs.title = `${testPlatoArgs.title}-tests`;
         const testsOutputDir = path.join((output ? output : process.cwd()), moduleOwner, moduleType, testPlatoArgs.title);
         console.log(`Plato.inspect ${path.dirname(m)} to ${testsOutputDir}`);
-        testsPlatoRun = plato.inspect(path.dirname(m), testsOutputDir, testPlatoArgs);
+       testsPlatoRun = new Promise((resolve) => {
+         return plato.inspect(path.dirname(m), testsOutputDir, testPlatoArgs, (_report) => resolve(_report));
+       }).then(_report => {
+         console.log(`capture the report for ${currentDir} tests`);
+         if (!reportsMap.get(moduleOwner).get('tests').get(currentDir)) {
+          reportsMap.get(moduleOwner).get('tests').set(currentDir, new Set());
+         }
+         reportsMap.get(moduleOwner).get('tests').get(currentDir).add(_report);
+         return _report;
+       });
       }
       const outputDir = path.join((output ? output : process.cwd()), moduleOwner, moduleType, platoArgs.title);
-      console.log(`Plato.inspect ${path.dirname(m)} to ${outputDir}`);
+      console.log(`Plato.inspect ${currentDir} to ${outputDir}`);
       platoArgs.exclude = /tests/;
-      const addonPlatoRun = plato.inspect(path.dirname(m), outputDir, platoArgs);
+
+      const addonPlatoRun = new Promise((resolve) => {
+        return plato.inspect(currentDir, outputDir, platoArgs, (_report) => resolve(_report));
+      }).then(_report => {
+        console.log(`capture the report for ${currentDir}`);
+        if (!reportsMap.get(moduleOwner).get(moduleType).get(currentDir)) {
+          reportsMap.get(moduleOwner).get(moduleType).set(currentDir, new Set());
+         }
+         reportsMap.get(moduleOwner).get(moduleType).get(currentDir).add(_report);
+        return _report;
+      })
 
       // wait for both
-      return Promise.all([testsPlatoRun, addonPlatoRun]);
+      return Promise.all([testsPlatoRun, addonPlatoRun]).then(() => {
+        console.dir(reportsMap);
+      });
     }
   })).then(() => {
     console.log(`Processed ${processedModules} total modules.`);
