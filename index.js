@@ -224,14 +224,13 @@ async function run() {
       })
 
       // wait for both
-      return Promise.all([testsPlatoRun, addonPlatoRun]).then(() => {
-        console.dir(reportsMap);
-      });
+      return Promise.all([testsPlatoRun, addonPlatoRun]);
     }
   })).then(() => {
     console.log(`Processed ${processedModules} total modules.`);
     console.log(` - ${processedAddons} addons`);
     console.log(` - ${processedEngines} engines`);
+    console.dir(reportsMap);
   });
   // await chunkJscodeshift(files);
 }
