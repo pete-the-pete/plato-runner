@@ -115,19 +115,19 @@
 
   <!--
     ex. output
-      tests
-        eslint, slock, cyclomatic
+      TESTS
+        eslint, sloc, maintainability
 
       modules
-        foo/tests eslint, slock, cyclomatic
-        bar/tests eslint, slock, cyclomatic
+        foo/tests eslint, sloc, maintainability
+        bar/tests eslint, sloc, maintainability
       
-      addons
-        eslint, slock, cyclomatic
+      ADDONS
+        eslint, sloc, maintainability
         
       modules
-        foo/addon eslint, slock, cyclomatic
-        bar/addon eslint, slock, cyclomatic
+        foo/addon eslint, sloc, maintainability
+        bar/addon eslint, sloc, maintainability
   -->
   <% reports.forEach(function(report, reportType) { %>
     <% if (reportType !== "summary") { %>
