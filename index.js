@@ -25,11 +25,10 @@
 const fastglob = require('fast-glob');
 const yargs = require('yargs');
 const plato = require("es6-plato");
-const fs = require('fs');
+const fs = require('fs-extra');
 const path = require('path');
 const _ = require('lodash');
-const { report } = require('process');
-const platoAssets = __dirname + 'node_modules/es6-plato/lib/assets/';
+const platoAssets = `${__dirname}/node_modules/es6-plato/lib/assets/`;
 
 /**
  * https://medium.com/@ali.dev/how-to-use-promise-with-exec-in-node-js-a39c4d7bbf77
@@ -40,12 +39,12 @@ const platoAssets = __dirname + 'node_modules/es6-plato/lib/assets/';
 function execShellCommand(cmd) {
   const exec = require('child_process').exec;
   return new Promise((resolve, reject) => {
-   exec(cmd, (error, stdout, stderr) => {
-    if (error) {
-     console.warn(error);
-    }
-    resolve(stdout? stdout : stderr);
-   });
+    exec(cmd, (error, stdout, stderr) => {
+      if (error) {
+        console.warn(error);
+      }
+      resolve(stdout ? stdout : stderr);
+    });
   });
 }
 
@@ -81,49 +80,6 @@ const { argv } = yargs
 
 const { output, globs = '', eslintrc = '', owners = '' } = argv;
 
-/* const argsToExclude = new Set([
-  '$0',
-  'transform',
-  'globs',
-  't',
-  'transform',
-  '_',
-]); */
-
-/* const argsToPassToJscodeshift = Object.keys(argv)
-  .filter((arg) => !argsToExclude.has(arg))
-  .map((arg) => `--${arg}=${argv[arg]}`);
-
-function runJscodeshift(files) {
-  return new Promise((resolve, reject) => {
-    const shellCommand = spawn(
-      `node_modules/.bin/jscodeshift -t ${transform} ${argsToPassToJscodeshift.join(
-        ' '
-      )} ${files.join(' ')}`,
-      { shell: true }
-    );
-
-    shellCommand.stdout.pipe(process.stdout);
-
-    shellCommand.on('close', (code) => {
-      if (code === 0) {
-        resolve();
-      } else {
-        reject();
-      }
-    });
-  });
-} */
-
-/* async function chunkJscodeshift(files, size = 1000, i = 1) {
-  if (files.length) {
-    console.log(`Processing chunk ${i}...`);
-    const chunk = files.slice(0, size);
-    await runJscodeshift(chunk);
-    await chunkJscodeshift(files.slice(size), size, i + 1);
-  }
-} */
-
 /**
  * Create a tabular report for all of the tests, addons, and engines under a given owner.
  * The report has the following breakdown:
@@ -138,11 +94,10 @@ function runJscodeshift(files) {
  *    ...
  * @param {*} reportsMap 
  */
-function writeOwnerReports(reportsMap) {
-  const fileTemplate = `${__dirname}/templates/owner-overview.html`;
+function writeOwnerReports(output, reportsMap) {
+  const overviewSource = fs.readFileSync(`${__dirname}/templates/owner-overview.html`).toString();
   reportsMap.forEach((reports, owner) => {
     // get the overview report for each type (tests, addons, engines)
-    // reports.get('addons').forEach(addon => plato.getOverviewReport(...addon))
     let ownerReports = [];
     reports.forEach((report, reportName, reportMap) => {
       let moduleReports = [];
@@ -156,18 +111,45 @@ function writeOwnerReports(reportsMap) {
       ownerReports = ownerReports.concat(moduleReports);
     });
     reports.set('summary', plato.getOverviewReport(ownerReports));
-    const overviewSource = fs.readFileSync(fileTemplate).toString();
-    // get the owner directory
-    const outputDir = `${__dirname}/${owner}`;
     // copy the assets
-    // write the template
-    fs.writeFile(path.join(outputDir, 'index.html'), _.template(overviewSource)({
-      report: report,
+    const ownerOutputPath = `${output}/${owner}`
+    fs.copy(platoAssets, `${ownerOutputPath}/assets`,  function (err) {
+      if (err) return console.error(err)
+      console.log('success!');
+    });
+    // write the template, should be async
+    plato.writeFile(`${ownerOutputPath}/index.html`, _.template(overviewSource)({
+      reports,
       options: {
-
+        owner,
+        flags: { eslint: true },
       }
-    }), 'utf8');
+    }));
+    // write the report
+    plato.writeReport(`${ownerOutputPath}/report`, reports.get('summary'));
+    // update the history
+    plato.updateHistoricalOverview(`${ownerOutputPath}/report`, reports.get('summary'), {});
   });
+}
+
+function writeOverallReport(output, reportsMap) {
+  const overviewSource = fs.readFileSync(`${__dirname}/templates/overall.html`).toString();
+  fs.copy(platoAssets, `${output}/assets`,  function (err) {
+    if (err) return console.error(err)
+    console.log('success!');
+  });
+  // write the template, should be async
+  plato.writeFile(`${output}/index.html`, _.template(overviewSource)({
+    reports,
+    options: {
+      owner,
+      flags: { eslint: true },
+    }
+  }));
+  // write the report
+  plato.writeReport(`${output}/report`, reports.get('summary'));
+  // update the history
+  plato.updateHistoricalOverview(`${output}/report`, reports.get('summary'), {});
 }
 
 async function run() {
@@ -193,7 +175,17 @@ async function run() {
   // reportsMap: {
   //  [owner]: { tests: [..reports], addons: [...reports], engines: [...reports]}
   // }
-  //  
+  //
+
+  /**
+   * TODO:
+   *  - write to a temporary location then mv to desired output
+   *  - write total overview
+   *  - make plato fully async
+   *  - make plato-runner fully async
+   *  - make them _fast_
+   *  - break out display portion of plato
+   */
   let processedModules = 0;
   let processedAddons = 0;
   let processedEngines = 0;
@@ -213,9 +205,9 @@ async function run() {
       if (!reportsMap.has(moduleOwner)) {
         reportsMap.set(moduleOwner, (() => {
           let _map = new Map();
-          _map.set('tests', new Map());
           _map.set('addons', new Map());
           _map.set('engines', new Map());
+          _map.set('tests', new Map());
           return _map;
         })());
       }
@@ -267,9 +259,9 @@ async function run() {
         if (!reportsMap.get(moduleOwner).get(moduleType).get(currentDir)) {
           const dataMap = new Map();
           dataMap.set('reports', new Set());
-          reportsMap.get(moduleOwner).get(moduleType).set(currentDir,dataMap);
-         }
-         reportsMap.get(moduleOwner).get(moduleType).get(currentDir).get('reports').add(_report);
+          reportsMap.get(moduleOwner).get(moduleType).set(currentDir, dataMap);
+        }
+        reportsMap.get(moduleOwner).get(moduleType).get(currentDir).get('reports').add(_report);
         return _report;
       })
 
@@ -278,12 +270,13 @@ async function run() {
     }
   })).then(() => {
     console.log(`Processed ${processedModules} total modules.`);
-    writeOwnerReports(reportsMap);
+    const _output = path.join((output ? output : process.cwd()));
+    writeOwnerReports(_output, reportsMap);
+    // writeOverallReport(_output, reportsMap);
     console.log(` - ${processedAddons} addons`);
     console.log(` - ${processedEngines} engines`);
     console.dir(reportsMap);
   });
-  // await chunkJscodeshift(files);
 }
 
 run();

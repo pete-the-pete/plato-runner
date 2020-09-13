@@ -12,8 +12,9 @@
   "author": "pete_the_pete",
   "license": "ISC",
   "dependencies": {
+    "es6-plato": "*",
     "fast-glob": "^3.2.4",
-    "yargs": "^15.4.1",
-    "es6-plato": "*"
+    "fs-extra": "^9.0.1",
+    "yargs": "^15.4.1"
   }
 }
