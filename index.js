@@ -28,6 +28,7 @@ const plato = require("es6-plato");
 const fs = require('fs-extra');
 const path = require('path');
 const _ = require('lodash');
+const { type } = require('os');
 const platoAssets = `${__dirname}/node_modules/es6-plato/lib/assets/`;
 
 /**
@@ -43,6 +44,7 @@ function execShellCommand(cmd) {
       if (error) {
         console.warn(error);
       }
+      console.log(`${cmd}: ${stdout}`);
       resolve(stdout ? stdout : stderr);
     });
   });
@@ -57,12 +59,11 @@ const { argv } = yargs
     globs: {
       type: 'string',
       describe: 'Comma separated list of globs to run the codemod on',
-      optional: false,
+      required: true
     },
     output: {
       type: 'string',
       describe: 'the directory that contains all the output. Defaults to current directory (".")',
-      optional: false,
       required: true,
     },
     owners: {
@@ -73,12 +74,12 @@ const { argv } = yargs
     eslintrc: {
       type: 'string',
       describe: 'path to estlintrc.js, forwarded to plato',
-      optional: false,
+      required: true,
     }
   })
   .strictCommands();
 
-const { output, globs = '', eslintrc = '', owners = '' } = argv;
+const { output, globs, eslintrc, owners = '' } = argv;
 
 /**
  * Create a tabular report for all of the tests, addons, and engines under a given owner.
@@ -94,55 +95,40 @@ const { output, globs = '', eslintrc = '', owners = '' } = argv;
  *    ...
  * @param {*} reportsMap 
  */
-function writeOwnerReports(output, reportsMap) {
+function writeOwnerReports(output, overallReportsMap) {
   const overviewSource = fs.readFileSync(`${__dirname}/templates/owner-overview.html`).toString();
-  reportsMap.forEach((reports, owner) => {
-    // get the overview report for each type (tests, addons, engines)
-    let ownerReports = [];
-    reports.forEach((report, reportName, reportMap) => {
-      let moduleReports = [];
-      reportMap.get(reportName).forEach((module, name, map) => {
-        // summary per module
-        map.get(name).set('summary', plato.getOverviewReport(...module.get('reports')));
-        moduleReports = moduleReports.concat(...module.get('reports'));
-      });
-      // summary per type
-      reportMap.get(reportName).set('summary', plato.getOverviewReport(moduleReports));
-      ownerReports = ownerReports.concat(moduleReports);
-    });
-    reports.set('summary', plato.getOverviewReport(ownerReports));
-    // copy the assets
-    const ownerOutputPath = `${output}/${owner}`
-    fs.copy(platoAssets, `${ownerOutputPath}/assets`,  function (err) {
-      if (err) return console.error(err)
-      console.log('success!');
-    });
-    // write the template, should be async
-    plato.writeFile(`${ownerOutputPath}/index.html`, _.template(overviewSource)({
-      reports,
-      options: {
-        owner,
-        flags: { eslint: true },
-      }
-    }));
-    // write the report
-    plato.writeReport(`${ownerOutputPath}/report`, reports.get('summary'));
-    // update the history
-    plato.updateHistoricalOverview(`${ownerOutputPath}/report`, reports.get('summary'), {});
+
+  // all reports by owner, ex: Favorites, Notes
+  overallReportsMap.forEach((ownerReport, owner) => {
+    debugger;
+    if (owner !== 'summary') {
+      // copy the assets
+      const ownerOutputPath = `${output}/${owner}`
+      fs.copy(platoAssets, `${ownerOutputPath}/assets`);
+      // write the template, should be async
+      plato.writeFile(`${ownerOutputPath}/index.html`, _.template(overviewSource)({
+        ownerReport,
+        options: {
+          owner,
+          flags: { eslint: true },
+        }
+      }));
+
+      // write the report
+      plato.writeReport(`${ownerOutputPath}/report`, ownerReport.get('summary'));
+      // update the history
+      plato.updateHistoricalOverview(`${ownerOutputPath}/report`, ownerReport.get('summary'), {});
+    }
   });
 }
 
-function writeOverallReport(output, reportsMap) {
+function writeOverallReport(output, reports) {
   const overviewSource = fs.readFileSync(`${__dirname}/templates/overall.html`).toString();
-  fs.copy(platoAssets, `${output}/assets`,  function (err) {
-    if (err) return console.error(err)
-    console.log('success!');
-  });
+  fs.copy(platoAssets, `${output}/assets`);
   // write the template, should be async
   plato.writeFile(`${output}/index.html`, _.template(overviewSource)({
     reports,
     options: {
-      owner,
       flags: { eslint: true },
     }
   }));
@@ -150,6 +136,35 @@ function writeOverallReport(output, reportsMap) {
   plato.writeReport(`${output}/report`, reports.get('summary'));
   // update the history
   plato.updateHistoricalOverview(`${output}/report`, reports.get('summary'), {});
+}
+
+function getModuleType(moduleData) {
+  return moduleData?.keywords?.includes('ember-engine') ? 'engines' : 'addons';
+}
+
+// if no owners, just use ALL
+async function getModuleOwner(module, owners) {
+  const moduleOwner = !!owners ? (await execShellCommand(`${owners} ${module}`)).trim() : 'ALL';
+  if (moduleOwner.includes('Error')) {
+    throw new Error(moduleOwner);
+  }
+  return moduleOwner;
+}
+
+async function inspectModule(module, outputDir, title) {
+  const currentDir = path.dirname(module);
+  const exclude = 'app|styles|build|.eyeglass_cache';
+  let platoArgs = {
+    title,
+    eslintrc,
+    recurse: true,
+    noempty: true,
+    exclude: title.includes('tests') ?
+      new RegExp(`${exclude}|addon|index.js`) :
+      new RegExp(`${exclude}|tests`)
+  };
+  console.log(`Plato.inspect ${currentDir} to ${outputDir}`);
+  return new Promise((resolve) => plato.inspect(currentDir, outputDir, platoArgs, (_report) => resolve(_report)));  
 }
 
 async function run() {
@@ -179,7 +194,6 @@ async function run() {
 
   /**
    * TODO:
-   *  - write to a temporary location then mv to desired output
    *  - write total overview
    *  - make plato fully async
    *  - make plato-runner fully async
@@ -187,94 +201,106 @@ async function run() {
    *  - break out display portion of plato
    */
   let processedModules = 0;
-  let processedAddons = 0;
-  let processedEngines = 0;
-  const reportsMap = new Map();
-  Promise.all(modules.map(async m => {
-    var json = JSON.parse(fs.readFileSync(m));
+  const reportsMap = new Map([
+    ['summary', []]
+  ]);
+  const _inspections = modules.map(async currentModule => {
+    var json = JSON.parse(fs.readFileSync(currentModule));
     if (json?.keywords?.includes('ember-addon')) {
       processedModules++;
       // owner
-      let moduleOwner = 'ALL';
-      if (owners) {
-        moduleOwner = (await execShellCommand(`${owners} ${m}`)).trim();
-        if (moduleOwner.includes('Error')) {
-          throw new Error(moduleOwner);
-        }
-      }
+      let moduleOwner = await getModuleOwner(currentModule, owners);
+      moduleOwner = moduleOwner.length ? moduleOwner : 'UNKOWN' 
+
       if (!reportsMap.has(moduleOwner)) {
-        reportsMap.set(moduleOwner, (() => {
-          let _map = new Map();
-          _map.set('addons', new Map());
-          _map.set('engines', new Map());
-          _map.set('tests', new Map());
-          return _map;
-        })());
+        reportsMap.set(moduleOwner, new Map([
+          ['addons', new Map([['summary', []]])],
+          ['engines', new Map([['summary', []]])],
+          ['tests', new Map([['summary', []]])],
+          ['summary', []]
+        ]));
       }
 
-      // type
-      let moduleType;
-      if (json?.keywords?.includes('ember-engine')) {
-        moduleType = 'engines';
-        processedEngines++;
-      } else {
-        moduleType = 'addons';
-        processedAddons++;
-      }
-      const title = json.name;
-      // tests
-      const exclude = 'app|styles|build|.eyeglass_cache ';
-      let platoArgs = {
-        title,
-        eslintrc,
-        recurse: true,
-        noempty: true
-      };
+      const moduleType = getModuleType(json);
+      const module = path.dirname(currentModule);
 
-      const currentDir = path.dirname(m);
-      let testsPlatoRun = Promise.resolve();
-      if (fs.existsSync(path.join(currentDir, 'tests'))) {
-        const testPlatoArgs = Object.assign({}, platoArgs);
-        testPlatoArgs.exclude = new RegExp(`${exclude}|addon|index.js`);
-        testPlatoArgs.title = `${testPlatoArgs.title}-tests`;
-        const testsOutputDir = path.join((output ? output : process.cwd()), moduleOwner, moduleType, testPlatoArgs.title);
-        console.log(`Plato.inspect ${path.dirname(m)} to ${testsOutputDir}`);
-        testsPlatoRun = new Promise((resolve) => plato.inspect(path.dirname(m), testsOutputDir, testPlatoArgs, (_report) => resolve(_report))).then(_report => {
-          console.log(`capture the report for ${currentDir} tests`);
-          if (!reportsMap.get(moduleOwner).get('tests').get(currentDir)) {
-            const dataMap = new Map();
-            dataMap.set('reports', new Set());
-            reportsMap.get(moduleOwner).get('tests').set(currentDir, dataMap);
-          }
-          reportsMap.get(moduleOwner).get('tests').get(currentDir).get('reports').add(_report);
-          return _report;
-        });
-      }
-      const outputDir = path.join((output ? output : process.cwd()), moduleOwner, moduleType, platoArgs.title);
-      console.log(`Plato.inspect ${currentDir} to ${outputDir}`);
-      platoArgs.exclude = /tests/;
+      let inpsections = [];
+      let title = json.name ?? module.replace(/[^a-zA-Z0-9]/g, '_');
+      let outputDir = path.join(output, moduleOwner, moduleType, title);
 
-      const addonPlatoRun = new Promise((resolve) => plato.inspect(currentDir, outputDir, platoArgs, (_report) => resolve(_report))).then(_report => {
-        console.log(`capture the report for ${currentDir}`);
-        if (!reportsMap.get(moduleOwner).get(moduleType).get(currentDir)) {
-          const dataMap = new Map();
-          dataMap.set('reports', new Set());
-          reportsMap.get(moduleOwner).get(moduleType).set(currentDir, dataMap);
-        }
-        reportsMap.get(moduleOwner).get(moduleType).get(currentDir).get('reports').add(_report);
-        return _report;
-      })
+      
+
+      // run the report for the module
+      inpsections.push(inspectModule(currentModule, outputDir, title));
+
+      // run the report for the module's tests if they exist
+      if (fs.existsSync(path.join(module, 'tests'))) {
+        title = `${json.name}-tests`;
+        outputDir = path.join(output, moduleOwner, moduleType, title);
+        inpsections.push(inspectModule(currentModule, outputDir, title));
+      }
 
       // wait for both
-      return Promise.all([testsPlatoRun, addonPlatoRun]);
+      return Promise.all(inpsections).then(results => {
+        results.moduleOwner = moduleOwner;
+        results.module = module;
+        results.moduleType = moduleType;
+        return results;
+      });
+    } else {
+      console.log(path.dirname(currentModule));
     }
-  })).then(() => {
+  });
+
+  Promise.all(_inspections).then(platoReports => {
     console.log(`Processed ${processedModules} total modules.`);
-    const _output = path.join((output ? output : process.cwd()));
-    writeOwnerReports(_output, reportsMap);
-    // writeOverallReport(_output, reportsMap);
-    console.log(` - ${processedAddons} addons`);
-    console.log(` - ${processedEngines} engines`);
+    // write the module overview data
+    for (let ownerReports of platoReports) {
+      if (ownerReports) {
+        // summary for the module
+        // concat the reports for the moduleyType
+        // concat the reports for the owner]
+        reportsMap.get(ownerReports.moduleOwner).get(ownerReports.moduleType).set(ownerReports.module, plato.getOverviewReport(ownerReports[0]));
+        reportsMap.get(ownerReports.moduleOwner).get(ownerReports.moduleType).get('summary').push(...ownerReports[0]);
+        reportsMap.get(ownerReports.moduleOwner).get('summary').push(...ownerReports[0]);
+        reportsMap.get('summary').push(...ownerReports[0]);
+        if (ownerReports.length > 1) {
+          reportsMap.get(ownerReports.moduleOwner).get('tests').set(ownerReports.module, plato.getOverviewReport(ownerReports[1]));
+          reportsMap.get(ownerReports.moduleOwner).get('tests').get('summary').push(...ownerReports[1]);
+          reportsMap.get(ownerReports.moduleOwner).get('summary').push(...ownerReports[1]);
+          reportsMap.get('summary').push(...ownerReports[1]);
+        }
+      }
+    }
+    return reportsMap;
+    // munge the data
+  }).then(reportsMap => {
+    // write the categorical overview data
+    reportsMap.forEach((ownerReport, name, _map) => {
+      if (name === 'summary') {
+        _map.set(name, plato.getOverviewReport(ownerReport));
+      } else {
+        ownerReport.forEach((typeReport, name, _map) => {
+          if (name === 'summary') {
+            _map.set(name, plato.getOverviewReport(typeReport));
+          } else {
+            typeReport.forEach((moduleReport, name, _map) => {
+              if (name === 'summary') {
+                _map.set(name, plato.getOverviewReport(moduleReport));
+              }
+            });
+          }
+        });
+      }
+    });
+    return reportsMap;
+  }).then(reportsMap => {
+    // write the reports
+    writeOwnerReports(output, reportsMap);
+    writeOverallReport(output, reportsMap);
+    return reportsMap
+  }).then(reportsMap => {
+    // final output
     console.dir(reportsMap);
   });
 }
