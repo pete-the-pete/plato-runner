@@ -105,13 +105,13 @@
   </div>
 
   <div class="row">
-    <div class="span12 group-header">
-      <div class="btn-group">
-        <button type="button" id="button-complexity" class="btn btn-default complexity">complexity</button>
-        <button type="button" id="button-sloc" class="btn btn-default sloc">sloc</button>
-        <button type="button" id="button-lint" class="btn btn-default lint">lint errors</button>
-      </div>
-    </div>
+    &nbsp;
+  </div>
+</div>
+
+<div class="container">
+  <div class="row">
+    <h3 class="col-md-12">Average Maintainability</h1>
   </div>
 
   <div class="row">
@@ -120,17 +120,57 @@
 
   <div class="row">
     <ul class="file-list list-unstyled">
+      <li class="col-md-12">
+        <div class="row">
+          <span class="col-md-3"></span>
+          <span class="col-md-3">ADDONS</span>
+          <span class="col-md-3">ENGINES</span>
+          <span class="col-md-3">TESTS</span>
+        </div>
+      </li>
       <% reports.forEach(function(owner,name) { %>
         <% if (name !== "summary") { %>
           <li class="col-md-12">
             <div class="row">
-              <span class="fade-left fadeout visible-large"></span>
-              <span class="col-md-4 file"><a class="file-link" href="./<%= name %>/index.html"><%= name %></a></span>
-              <span class="col-md-8 file-chart js-file-chart"
-                  data-lint="<%= owner.get('summary').summary.average.eslint %>"
-                  data-sloc="<%= owner.get('summary').summary.average.sloc %>"
-                  data-complexity="<%= owner.get('summary').summary.average.maintainability%>"
-              ></span>
+              <span class="col-md-3 file"><a class="file-link" href="./<%= name %>/index.html"><%= name %></a></span>
+              <span class="col-md-3"><%= owner.get('addons').get('summary').summary.average.maintainability %></span>
+              <span class="col-md-3"><%= owner.get('engines').get('summary').summary.average.maintainability %></span>
+              <span class="col-md-3"><%= owner.get('tests').get('summary').summary.average.maintainability %></span>
+            </div>
+          </li>
+        <% } %>
+      <% }); %>
+    </ul>
+  </div>
+</div>
+
+<div class="container">
+  <div class="row">
+    <h3 class="col-md-12">Average SLOC</h1>
+  </div>
+
+  <div class="row">
+    &nbsp;
+  </div>
+
+  <div class="row">
+    <ul class="file-list list-unstyled">
+      <li class="col-md-12">
+        <div class="row">
+          <span class="col-md-3"></span>
+          <span class="col-md-3">ADDONS</span>
+          <span class="col-md-3">ENGINES</span>
+          <span class="col-md-3">TESTS</span>
+        </div>
+      </li>
+      <% reports.forEach(function(owner,name) { %>
+        <% if (name !== "summary") { %>
+          <li class="col-md-12">
+            <div class="row">
+              <span class="col-md-3 file"><a class="file-link" href="./<%= name %>/index.html"><%= name %></a></span>
+              <span class="col-md-3"><%= owner.get('addons').get('summary').summary.average.sloc %></span>
+              <span class="col-md-3"><%= owner.get('engines').get('summary').summary.average.sloc %></span>
+              <span class="col-md-3"><%= owner.get('tests').get('summary').summary.average.sloc %></span>
             </div>
           </li>
         <% } %>
