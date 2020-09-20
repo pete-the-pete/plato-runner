@@ -100,7 +100,6 @@ function writeOwnerReports(output, overallReportsMap) {
 
   // all reports by owner, ex: Favorites, Notes
   overallReportsMap.forEach((ownerReport, owner) => {
-    debugger;
     if (owner !== 'summary') {
       // copy the assets
       const ownerOutputPath = `${output}/${owner}`
@@ -175,6 +174,9 @@ async function run() {
     '!**/bower_components/**',
   ]);
   console.log(`Found a total of ${files.length} files from globs...`);
+  if (!files.length) {
+    throw new Error(`No files found for ${globs}!!!`);
+  }
   const modules = files.filter(file => file.includes('package.json'));
 
   console.log(`Inspecting a total of ${modules.length} modules...`);
@@ -301,7 +303,7 @@ async function run() {
     return reportsMap
   }).then(reportsMap => {
     // final output
-    console.dir(reportsMap);
+    // console.dir(reportsMap);
   });
 }
 
