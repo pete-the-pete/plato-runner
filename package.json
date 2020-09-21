@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "Convenience script to run plato across many directories and provide organized output",
   "main": "index.js",
+  "type": "module",
   "scripts": {
     "test": "test"
   },

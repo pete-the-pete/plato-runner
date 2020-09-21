@@ -22,13 +22,20 @@
  *    - run script on tests
  */
 
-const fastglob = require('fast-glob');
-const yargs = require('yargs');
-const plato = require("es6-plato");
-const fs = require('fs-extra');
-const path = require('path');
-const _ = require('lodash');
-const { type } = require('os');
+import fastglob from 'fast-glob';
+import yargs from 'yargs';
+import plato from "es6-plato";
+import fs from 'fs-extra';
+import path from 'path';
+import _ from 'lodash';
+import { exec } from 'child_process';
+
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
 const platoAssets = `${__dirname}/node_modules/es6-plato/lib/assets/`;
 
 /**
@@ -38,7 +45,6 @@ const platoAssets = `${__dirname}/node_modules/es6-plato/lib/assets/`;
  * @return {Promise<string>}
  */
 function execShellCommand(cmd) {
-  const exec = require('child_process').exec;
   return new Promise((resolve, reject) => {
     exec(cmd, (error, stdout, stderr) => {
       if (error) {
@@ -95,8 +101,8 @@ const { output, globs, eslintrc, owners = '' } = argv;
  *    ...
  * @param {*} reportsMap 
  */
-function writeOwnerReports(output, overallReportsMap) {
-  const overviewSource = fs.readFileSync(`${__dirname}/templates/owner-overview.html`).toString();
+async function writeOwnerReports(output, overallReportsMap) {
+  const overviewSource = (await fs.readFile(`${__dirname}/templates/owner-overview.html`)).toString();
 
   // all reports by owner, ex: Favorites, Notes
   overallReportsMap.forEach((ownerReport, owner) => {
@@ -121,8 +127,8 @@ function writeOwnerReports(output, overallReportsMap) {
   });
 }
 
-function writeOverallReport(output, reports) {
-  const overviewSource = fs.readFileSync(`${__dirname}/templates/overall.html`).toString();
+async function writeOverallReport(output, reports) {
+  const overviewSource = (await fs.readFile(`${__dirname}/templates/overall.html`)).toString();
   fs.copy(platoAssets, `${output}/assets`);
   // write the template, should be async
   plato.writeFile(`${output}/index.html`, _.template(overviewSource)({
@@ -163,7 +169,7 @@ async function inspectModule(module, outputDir, title) {
       new RegExp(`${exclude}|tests`)
   };
   console.log(`Plato.inspect ${currentDir} to ${outputDir}`);
-  return new Promise((resolve) => plato.inspect(currentDir, outputDir, platoArgs, (_report) => resolve(_report)));  
+  return plato.inspect(currentDir, outputDir, platoArgs);  
 }
 
 async function run() {
@@ -207,7 +213,8 @@ async function run() {
     ['summary', []]
   ]);
   const _inspections = modules.map(async currentModule => {
-    var json = JSON.parse(fs.readFileSync(currentModule));
+    let json = await fs.readFile(currentModule);
+    json = JSON.parse(json);
     if (json?.keywords?.includes('ember-addon')) {
       processedModules++;
       // owner
@@ -230,13 +237,13 @@ async function run() {
       let title = json.name ?? module.replace(/[^a-zA-Z0-9]/g, '_');
       let outputDir = path.join(output, moduleOwner, moduleType, title);
 
-      
-
       // run the report for the module
       inpsections.push(inspectModule(currentModule, outputDir, title));
 
       // run the report for the module's tests if they exist
-      if (fs.existsSync(path.join(module, 'tests'))) {
+      let testsDir = path.join(path.join(module, 'tests'));
+      let testsDirExists = await fs.stat(testsDir).then(() => true).catch(() => false);
+      if (testsDirExists) {
         title = `${json.name}-tests`;
         outputDir = path.join(output, moduleOwner, moduleType, title);
         inpsections.push(inspectModule(currentModule, outputDir, title));
@@ -296,11 +303,12 @@ async function run() {
       }
     });
     return reportsMap;
-  }).then(reportsMap => {
+  }).then(async reportsMap => {
+    debugger;
     // write the reports
-    writeOwnerReports(output, reportsMap);
-    writeOverallReport(output, reportsMap);
-    return reportsMap
+    await writeOwnerReports(output, reportsMap);
+    await writeOverallReport(output, reportsMap);
+    return reportsMap;
   }).then(reportsMap => {
     // final output
     // console.dir(reportsMap);
