@@ -105,13 +105,13 @@ async function writeOwnerReports(output, overallReportsMap) {
   const overviewSource = (await fs.readFile(`${__dirname}/templates/owner-overview.html`)).toString();
 
   // all reports by owner, ex: Favorites, Notes
-  overallReportsMap.forEach((ownerReport, owner) => {
+  for await (let report of overallReportsMap) {
+    let [owner, ownerReport] = report;
     if (owner !== 'summary') {
       // copy the assets
       const ownerOutputPath = `${output}/${owner}`
-      fs.copy(platoAssets, `${ownerOutputPath}/assets`);
       // write the template, should be async
-      plato.writeFile(`${ownerOutputPath}/index.html`, _.template(overviewSource)({
+      await plato.writeFile(`${ownerOutputPath}/index.html`, _.template(overviewSource)({
         ownerReport,
         options: {
           owner,
@@ -120,27 +120,26 @@ async function writeOwnerReports(output, overallReportsMap) {
       }));
 
       // write the report
-      plato.writeReport(`${ownerOutputPath}/report`, ownerReport.get('summary'));
+      await plato.writeReport(`${ownerOutputPath}/report`, ownerReport.get('summary'));
       // update the history
-      plato.updateHistoricalOverview(`${ownerOutputPath}/report`, ownerReport.get('summary'), {});
+      await plato.updateHistoricalOverview(`${ownerOutputPath}/report`, ownerReport.get('summary'), {});
     }
-  });
+  }
 }
 
 async function writeOverallReport(output, reports) {
   const overviewSource = (await fs.readFile(`${__dirname}/templates/overall.html`)).toString();
-  fs.copy(platoAssets, `${output}/assets`);
   // write the template, should be async
-  plato.writeFile(`${output}/index.html`, _.template(overviewSource)({
+  await plato.writeFile(`${output}/index.html`, _.template(overviewSource)({
     reports,
     options: {
       flags: { eslint: true },
     }
   }));
   // write the report
-  plato.writeReport(`${output}/report`, reports.get('summary'));
+  await plato.writeReport(`${output}/report`, reports.get('summary'));
   // update the history
-  plato.updateHistoricalOverview(`${output}/report`, reports.get('summary'), {});
+  await plato.updateHistoricalOverview(`${output}/report`, reports.get('summary'), {});
 }
 
 function getModuleType(moduleData) {
@@ -304,14 +303,11 @@ async function run() {
     });
     return reportsMap;
   }).then(async reportsMap => {
-    debugger;
     // write the reports
+    fs.copy(platoAssets, `${output}/assets`);
     await writeOwnerReports(output, reportsMap);
     await writeOverallReport(output, reportsMap);
     return reportsMap;
-  }).then(reportsMap => {
-    // final output
-    // console.dir(reportsMap);
   });
 }
 
