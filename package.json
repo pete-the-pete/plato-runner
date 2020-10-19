@@ -16,6 +16,7 @@
     "es6-plato": "*",
     "fast-glob": "^3.2.4",
     "fs-extra": "^9.0.1",
+    "workerpool": "^6.0.2",
     "yargs": "^15.4.1"
   }
 }

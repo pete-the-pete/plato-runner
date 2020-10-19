@@ -29,6 +29,8 @@ import fs from 'fs-extra';
 import path from 'path';
 import _ from 'lodash';
 import { exec } from 'child_process';
+import os from 'os';
+import workerpool from 'workerpool';
 
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
@@ -37,6 +39,11 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 const platoAssets = `${__dirname}/node_modules/es6-plato/lib/assets/`;
+
+const pool = workerpool.pool(`${__dirname}/lib/worker.js`, {
+  maxWorkers: Math.ceil(os.cpus().length / 3),
+  workerType: 'thread',
+});
 
 /**
  * https://medium.com/@ali.dev/how-to-use-promise-with-exec-in-node-js-a39c4d7bbf77
@@ -67,6 +74,11 @@ const { argv } = yargs
       describe: 'Comma separated list of globs to run the codemod on',
       required: true
     },
+    processDir: {
+      type: 'string',
+      describe: 'the location to run the process in (globals are relative to this dir)',
+      required: true,
+    },
     output: {
       type: 'string',
       describe: 'the directory that contains all the output. Defaults to current directory (".")',
@@ -85,7 +97,7 @@ const { argv } = yargs
   })
   .strictCommands();
 
-const { output, globs, eslintrc, owners = '' } = argv;
+const { output, globs, processDir, eslintrc, owners = '' } = argv;
 
 /**
  * Create a tabular report for all of the tests, addons, and engines under a given owner.
@@ -155,7 +167,7 @@ async function getModuleOwner(module, owners) {
   return moduleOwner;
 }
 
-async function inspectModule(module, outputDir, title) {
+/* async function inspectModule(module, outputDir, title) {
   const currentDir = path.dirname(module);
   const exclude = 'app|styles|build|.eyeglass_cache';
   let platoArgs = {
@@ -169,9 +181,11 @@ async function inspectModule(module, outputDir, title) {
   };
   console.log(`Plato.inspect ${currentDir} to ${outputDir}`);
   return plato.inspect(currentDir, outputDir, platoArgs);  
-}
+} */
 
 async function run() {
+  console.log(process.cwd());
+  process.chdir('../../voyager-web_trunk/');//processDir);
   // get the modules
   const files = await fastglob([
     ...globs.split(',').map((glob) => glob.trim()),
@@ -201,10 +215,10 @@ async function run() {
 
   /**
    * TODO:
-   *  - write total overview
-   *  - make plato fully async
-   *  - make plato-runner fully async
-   *  - make them _fast_
+   *  - write total overview DONE
+   *  - make plato fully async DONE
+   *  - make plato-runner fully async DONE
+   *  - user worker
    *  - break out display portion of plato
    */
   let processedModules = 0;
@@ -237,7 +251,7 @@ async function run() {
       let outputDir = path.join(output, moduleOwner, moduleType, title);
 
       // run the report for the module
-      inpsections.push(inspectModule(currentModule, outputDir, title));
+      inpsections.push(pool.exec('inspectModule', [currentModule, outputDir, eslintrc, title]));
 
       // run the report for the module's tests if they exist
       let testsDir = path.join(path.join(module, 'tests'));
@@ -245,10 +259,11 @@ async function run() {
       if (testsDirExists) {
         title = `${json.name}-tests`;
         outputDir = path.join(output, moduleOwner, moduleType, title);
-        inpsections.push(inspectModule(currentModule, outputDir, title));
+        inpsections.push(pool.exec('inspectModule', [currentModule, outputDir, eslintrc, title]));
       }
 
       // wait for both
+      debugger;
       return Promise.all(inpsections).then(results => {
         results.moduleOwner = moduleOwner;
         results.module = module;
@@ -261,6 +276,7 @@ async function run() {
   });
 
   Promise.all(_inspections).then(platoReports => {
+    debugger;
     console.log(`Processed ${processedModules} total modules.`);
     // write the module overview data
     for (let ownerReports of platoReports) {
@@ -307,7 +323,7 @@ async function run() {
     fs.copy(platoAssets, `${output}/assets`);
     await writeOwnerReports(output, reportsMap);
     await writeOverallReport(output, reportsMap);
-    return reportsMap;
+    process.exit();
   });
 }
 
