@@ -227,7 +227,7 @@ async function run() {
 
       // run the report for the module's tests if they exist
       let testsDir = path.join(path.join(module, 'tests'));
-      let testsDirExists = fs.statSync(testsDir);
+      let testsDirExists =  await fs.stat(testsDir).then(() => true).catch(() => false);
       if (testsDirExists) {
         title = `${title}-tests`;
         outputDir = path.join(output, moduleOwner, moduleType, title);
