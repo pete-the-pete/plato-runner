@@ -173,6 +173,7 @@ function inspectAndProcessModule(moduleOwner, moduleType, currentModule, eslintr
     reportsMap.get(moduleOwner).get(moduleType).set(module, plato.getOverviewReport(report));
     reportsMap.get(moduleOwner).get(moduleType).get('summary').push(...report);
     reportsMap.get(moduleOwner).get('summary').push(...report);
+    reportsMap.get('summary').push(...report);
   });
 }
 
